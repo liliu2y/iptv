@@ -2,26 +2,27 @@ name: 自动更新IPTV组播源
 
 on:
   schedule:
-    - cron: '30 8 * * *'
-  workflow_dispatch:
+    - cron: '30 8 * * *'  # 每日8:30 UTC（北京时间16:30）自动运行
+  workflow_dispatch:      # 支持手动触发
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: github.ref == 'refs/heads/main' # 仓库分支是master则改为master
+    timeout-minutes: 30   # 超时保护，避免无限运行
+    if: github.ref == 'refs/heads/main' # 仅主分支运行，master分支请替换为master
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: false # 关闭默认凭证，避免干扰自定义令牌
 
       - name: Install Dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends yt-dlp sed nmap netcat-traditional curl
+          # 验证核心命令，缺失则终止
           command -v yt-dlp || { echo "yt-dlp安装失败"; exit 1; }
           command -v nc || { echo "netcat安装失败"; exit 1; }
 
@@ -29,12 +30,11 @@ jobs:
         id: test_zubo
         run: |
           cd $GITHUB_WORKSPACE
-          # 确保txt目录存在，避免文件生成失败
-          mkdir -p txt
+          mkdir -p txt # 强制确保txt目录存在，避免文件生成失败
           bash ./zubo.sh
           time=$(date +%Y/%m/%d)
           echo "浙江频道 $time 更新,#genre#" > zubo.txt
-          # 省份文件数组，替换无效的浙江.txt为浙江电信.txt
+          # 省份文件数组，容错合并（不存在则跳过）
           PROVINCE_FILES=(
             "txt/浙江电信.txt"
             "txt/湖南电信.txt" "txt/湖北电信.txt" "txt/广东电信.txt"
@@ -49,7 +49,6 @@ jobs:
             "txt/重庆联通.txt" "txt/黑龙江联通.txt" "txt/辽宁联通.txt"
             "txt/甘肃电信.txt" "txt/新疆电信.txt" "txt/宁夏电信.txt"
           )
-          # 容错合并文件
           for file in "${PROVINCE_FILES[@]}"; do
             if [ -f "$file" ]; then
               cat "$file" >> zubo.txt
@@ -64,13 +63,14 @@ jobs:
         id: git_config
         run: |
           cd $GITHUB_WORKSPACE
+          # 配置Git官方bot身份
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # 强制拉取最新代码，解决分支冲突
-          git pull origin main --force 2>/dev/null || echo "📌 无远程代码，跳过拉取"
-          # 仅添加相关文件，避免误提交
+          # 强制拉取最新代码，解决分支冲突（自动化场景无需保留本地冲突）
+          git pull origin main --force 2>/dev/null || echo "📌 首次运行/无远程代码，跳过拉取"
+          # 仅添加组播源相关文件，避免误提交无关内容
           git add zubo.txt txt/*.txt
-          # 检查变更，避免空提交
+          # 检查是否有代码变更，避免空提交
           if git status --porcelain | grep -q .; then
             git commit -m "📌 更新IPTV组播源 - $(date +%Y/%m/%d %H:%M:%S)"
             echo "✅ 代码提交成功"
@@ -80,12 +80,9 @@ jobs:
             echo "has_change=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 推送代码到仓库
-        if: steps.git_config.outputs.has_change == 'true'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GH_TOKEN }} # 核心：用你的仓库Secrets令牌
-          repository: ${{ secrets.GH_PATH }}    # 格式：用户名/仓库名（如xxx/iptv）
-          branch: main                          # 仓库是master则改为master
-          force: true                           # 强制推送，解决分支不一致
-          directory: .                          # 推送当前工作目录
+      - name: 原生Git推送代码到仓库
+        if: steps.git_config.outputs.has_change == 'true' # 仅有变更时推送
+        run: |
+          cd $GITHUB_WORKSPACE
+          # 核心：原生git push，用令牌拼接仓库地址，强制推送
+          git push https://${{ secrets.GH_TOKEN }}@github.com/${{ secrets.GH_PATH }}.git main --force
