@@ -1,59 +1,106 @@
-name: 组播
+name: 自动更新IPTV组播源
 
+# 触发规则：每日8:30 UTC（对应北京时间16:30）自动运行，支持手动触发
 on:
   schedule:
     - cron: '30 8 * * *'
   workflow_dispatch:
 
 jobs:
-  run-script:
+  update-iptv-source:
     runs-on: ubuntu-latest
+    # 设置作业超时时间（避免无限运行）
+    timeout-minutes: 60
+    # 仅在主分支触发（可根据实际分支名调整）
+    if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: 检出代码仓库
+        uses: actions/checkout@v4  # 升级到最新版
         with:
           fetch-depth: 0   
-      
-      - name: Install Dependencies
+          persist-credentials: false  # 提升安全性
+
+      - name: 安装依赖包
         run: |
-          sudo apt-get update
-          sudo apt-get install -y yt-dlp sed nmap
-        
-- name: 测试组播源
-  run: |
-    cd $GITHUB_WORKSPACE
-    bash ./zubo.sh
-    time=$(date +%Y/%m/%d)
-    # 第一步：初始化zubo.txt，写入浙江频道更新头（保持你的原有逻辑）
-    echo "浙江频道 $time 更新,#genre#" > zubo.txt
-    # 核心修复1：替换不存在的txt/浙江.txt 为 实际的浙江电信/浙江联通（二选一/都加，根据你的源）
-    # 优先拼接浙江电信（如果需要浙江联通也加，直接写cat txt/浙江联通.txt >> zubo.txt 即可）
-    [ -f "txt/浙江电信.txt" ] && cat txt/浙江电信.txt >> zubo.txt
-    # 核心修复2：批量拼接所有省份文件，逐个判断文件是否存在，不存在则跳过，不中断脚本
-    # 把所有要拼接的文件列在这里，用空格分隔
-    PROVINCE_FILES="txt/湖南电信.txt txt/湖北电信.txt txt/广东电信.txt txt/北京联通.txt txt/四川电信.txt txt/浙江电信.txt txt/江苏电信.txt txt/上海电信.txt txt/福建电信.txt txt/安徽电信.txt txt/江西电信.txt txt/天津联通.txt txt/河南联通.txt txt/河南电信.txt txt/河北电信.txt txt/河北联通.txt txt/山东电信.txt txt/北京电信.txt txt/陕西电信.txt txt/广西电信.txt txt/贵州电信.txt txt/山西联通.txt txt/重庆电信.txt txt/海南电信.txt txt/吉林电信.txt txt/云南电信.txt txt/湖北联通.txt txt/山东联通.txt txt/重庆联通.txt txt/黑龙江联通.txt txt/辽宁联通.txt txt/甘肃电信.txt txt/新疆电信.txt txt/宁夏电信.txt"
-    # 遍历文件列表，只拼接存在的文件
-    for file in $PROVINCE_FILES; do
-      if [ -f "$file" ]; then
-        cat "$file" >> zubo.txt
-        echo "成功拼接：$file"
-      else
-        echo "提示：$file 不存在，跳过拼接"
-      fi
-    done
-- name: 更新组播源
-  run: |
-    git pull
-    git config --local user.email "action@github.com"
-    git config --local user.name "GitHub Action"
-    git add .
-    git commit -m "更新组播源"
-#          git push
-- name: Push To Github
-  uses: ad-m/github-push-action@master
-  with:
-    github_token: ${{ secrets.GH_TOKEN }}
-    repository: ${{ secrets.GH_PATH }}
-    directory: .
-    force: true
+          # 升级系统并安装依赖，增加错误重试
+          sudo apt-get update -y || sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            yt-dlp sed nmap netcat-traditional curl  # 补充netcat（nc命令依赖）
+          # 验证关键命令是否安装成功
+          command -v nc || { echo "netcat安装失败"; exit 1; }
+          command -v curl || { echo "curl安装失败"; exit 1; }
+
+      - name: 执行组播源测试脚本
+        id: scan_zubo
+        run: |
+          # 切换到工作目录
+          cd $GITHUB_WORKSPACE
+          echo "开始执行组播源检测脚本..."
+          # 执行shell脚本并输出日志（便于调试）
+          bash ./zubo.sh > zubo_scan.log 2>&1
+          echo "脚本执行完成，日志已保存到 zubo_scan.log"
+          
+          # 生成最终的zubo.txt文件
+          time=$(date +%Y/%m/%d)
+          echo "浙江频道 $time 更新,#genre#" > zubo.txt
+          
+          # 定义需要合并的省份文件列表（按分类整理，提升可读性）
+          PROVINCE_FILES=(
+            "txt/浙江.txt"
+            "txt/湖南电信.txt" "txt/湖北电信.txt" "txt/广东电信.txt"
+            "txt/北京联通.txt" "txt/四川电信.txt" "txt/江苏电信.txt"
+            "txt/上海电信.txt" "txt/福建电信.txt" "txt/安徽电信.txt"
+            "txt/江西电信.txt" "txt/天津联通.txt" "txt/河南联通.txt"
+            "txt/河南电信.txt" "txt/河北电信.txt" "txt/河北联通.txt"
+            "txt/山东电信.txt" "txt/北京电信.txt" "txt/陕西电信.txt"
+            "txt/广西电信.txt" "txt/贵州电信.txt" "txt/山西联通.txt"
+            "txt/重庆电信.txt" "txt/海南电信.txt" "txt/吉林电信.txt"
+            "txt/云南电信.txt" "txt/湖北联通.txt" "txt/山东联通.txt"
+            "txt/重庆联通.txt" "txt/黑龙江联通.txt" "txt/辽宁联通.txt"
+            "txt/甘肃电信.txt" "txt/新疆电信.txt" "txt/宁夏电信.txt"
+          )
+          
+          # 循环合并文件（增加容错：文件不存在时跳过）
+          for file in "${PROVINCE_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              cat "$file" >> zubo.txt
+              echo "已合并文件: $file"
+            else
+              echo "警告：文件不存在，跳过合并: $file"
+            fi
+          done
+          
+          # 输出文件大小（验证是否生成成功）
+          echo "最终zubo.txt文件大小: $(du -h zubo.txt | awk '{print $1}')"
+
+      - name: 提交代码变更
+        id: commit_code
+        run: |
+          # 拉取最新代码（避免冲突）
+          git pull origin main --rebase || echo "拉取代码失败，继续执行"
+          
+          # 配置git用户信息
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 检查是否有变更（避免空提交）
+          if git status --porcelain | grep -q .; then
+            git add zubo.txt zubo_scan.log txt/*.txt  # 仅添加相关文件，避免误提交
+            git commit -m "📌 更新IPTV组播源 - $(date +%Y/%m/%d %H:%M:%S)"
+            echo "已提交代码变更"
+          else
+            echo "无代码变更，跳过提交"
+          fi
+
+      - name: 推送代码到仓库
+        if: steps.commit_code.outcome == 'success'  # 仅在提交成功时推送
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+          repository: ${{ secrets.GH_PATH }}
+          branch: main  # 指定推送分支
+          directory: .
+          force: true
+          # 推送前检查
+          fetch: true
