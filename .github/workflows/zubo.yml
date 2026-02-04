@@ -1,53 +1,42 @@
 name: 自动更新IPTV组播源
 
-# 触发规则：每日8:30 UTC（对应北京时间16:30）自动运行，支持手动触发
 on:
   schedule:
     - cron: '30 8 * * *'
   workflow_dispatch:
 
 jobs:
-  update-iptv-source:
+  run-script:
     runs-on: ubuntu-latest
-    # 设置作业超时时间（避免无限运行）
-    timeout-minutes: 60
-    # 仅在主分支触发（可根据实际分支名调整）
-    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main' # 仓库分支是master则改为master
 
     steps:
-      - name: 检出代码仓库
-        uses: actions/checkout@v4  # 升级到最新版
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0   
-          persist-credentials: false  # 提升安全性
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: 安装依赖包
+      - name: Install Dependencies
         run: |
-          # 升级系统并安装依赖，增加错误重试
-          sudo apt-get update -y || sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            yt-dlp sed nmap netcat-traditional curl  # 补充netcat（nc命令依赖）
-          # 验证关键命令是否安装成功
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends yt-dlp sed nmap netcat-traditional curl
+          command -v yt-dlp || { echo "yt-dlp安装失败"; exit 1; }
           command -v nc || { echo "netcat安装失败"; exit 1; }
-          command -v curl || { echo "curl安装失败"; exit 1; }
 
-      - name: 执行组播源测试脚本
-        id: scan_zubo
+      - name: 测试组播源
+        id: test_zubo
         run: |
-          # 切换到工作目录
           cd $GITHUB_WORKSPACE
-          echo "开始执行组播源检测脚本..."
-          # 执行shell脚本并输出日志（便于调试）
-          bash ./zubo.sh > zubo_scan.log 2>&1
-          echo "脚本执行完成，日志已保存到 zubo_scan.log"
-          
-          # 生成最终的zubo.txt文件
+          # 确保txt目录存在，避免文件生成失败
+          mkdir -p txt
+          bash ./zubo.sh
           time=$(date +%Y/%m/%d)
           echo "浙江频道 $time 更新,#genre#" > zubo.txt
-          
-          # 定义需要合并的省份文件列表（按分类整理，提升可读性）
+          # 省份文件数组，替换无效的浙江.txt为浙江电信.txt
           PROVINCE_FILES=(
-            "txt/浙江.txt"
+            "txt/浙江电信.txt"
             "txt/湖南电信.txt" "txt/湖北电信.txt" "txt/广东电信.txt"
             "txt/北京联通.txt" "txt/四川电信.txt" "txt/江苏电信.txt"
             "txt/上海电信.txt" "txt/福建电信.txt" "txt/安徽电信.txt"
@@ -60,47 +49,43 @@ jobs:
             "txt/重庆联通.txt" "txt/黑龙江联通.txt" "txt/辽宁联通.txt"
             "txt/甘肃电信.txt" "txt/新疆电信.txt" "txt/宁夏电信.txt"
           )
-          
-          # 循环合并文件（增加容错：文件不存在时跳过）
+          # 容错合并文件
           for file in "${PROVINCE_FILES[@]}"; do
             if [ -f "$file" ]; then
               cat "$file" >> zubo.txt
-              echo "已合并文件: $file"
+              echo "✅ 合并成功：$file"
             else
-              echo "警告：文件不存在，跳过合并: $file"
+              echo "⚠️ 文件不存在，跳过：$file"
             fi
           done
-          
-          # 输出文件大小（验证是否生成成功）
-          echo "最终zubo.txt文件大小: $(du -h zubo.txt | awk '{print $1}')"
+          ls -lh zubo.txt && echo "📄 组播源文件生成完成"
 
-      - name: 提交代码变更
-        id: commit_code
+      - name: 配置Git并处理代码变更
+        id: git_config
         run: |
-          # 拉取最新代码（避免冲突）
-          git pull origin main --rebase || echo "拉取代码失败，继续执行"
-          
-          # 配置git用户信息
+          cd $GITHUB_WORKSPACE
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
-          # 检查是否有变更（避免空提交）
+          # 强制拉取最新代码，解决分支冲突
+          git pull origin main --force 2>/dev/null || echo "📌 无远程代码，跳过拉取"
+          # 仅添加相关文件，避免误提交
+          git add zubo.txt txt/*.txt
+          # 检查变更，避免空提交
           if git status --porcelain | grep -q .; then
-            git add zubo.txt zubo_scan.log txt/*.txt  # 仅添加相关文件，避免误提交
             git commit -m "📌 更新IPTV组播源 - $(date +%Y/%m/%d %H:%M:%S)"
-            echo "已提交代码变更"
+            echo "✅ 代码提交成功"
+            echo "has_change=true" >> $GITHUB_OUTPUT
           else
-            echo "无代码变更，跳过提交"
+            echo "📌 无代码变更，跳过推送"
+            echo "has_change=false" >> $GITHUB_OUTPUT
           fi
 
       - name: 推送代码到仓库
-        if: steps.commit_code.outcome == 'success'  # 仅在提交成功时推送
+        if: steps.git_config.outputs.has_change == 'true'
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ secrets.GH_TOKEN }}
-          repository: ${{ secrets.GH_PATH }}
-          branch: main  # 指定推送分支
-          directory: .
-          force: true
-          # 推送前检查
-          fetch: true
+          github_token: ${{ secrets.GH_TOKEN }} # 核心：用你的仓库Secrets令牌
+          repository: ${{ secrets.GH_PATH }}    # 格式：用户名/仓库名（如xxx/iptv）
+          branch: main                          # 仓库是master则改为master
+          force: true                           # 强制推送，解决分支不一致
+          directory: .                          # 推送当前工作目录
