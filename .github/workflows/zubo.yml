@@ -20,29 +20,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y yt-dlp sed nmap
         
-      - name: 测试组播源
-        run: |
-          cd $GITHUB_WORKSPACE
-          bash ./zubo.sh
-          time=$(date +%Y/%m/%d)
-          echo "浙江频道 $time 更新,#genre#" > zubo.txt
-          cat txt/浙江.txt >> zubo.txt
-          cat txt/湖南电信.txt txt/湖北电信.txt txt/广东电信.txt txt/北京联通.txt txt/四川电信.txt txt/浙江电信.txt txt/江苏电信.txt txt/上海电信.txt txt/福建电信.txt txt/安徽电信.txt txt/江西电信.txt txt/天津联通.txt txt/河南联通.txt txt/河南电信.txt txt/河北电信.txt txt/河北联通.txt txt/山东电信.txt txt/北京电信.txt txt/陕西电信.txt txt/广西电信.txt txt/贵州电信.txt txt/山西联通.txt txt/重庆电信.txt txt/海南电信.txt txt/吉林电信.txt txt/云南电信.txt txt/湖北联通.txt txt/山东联通.txt txt/重庆联通.txt txt/黑龙江联通.txt txt/辽宁联通.txt txt/甘肃电信.txt txt/新疆电信.txt txt/宁夏电信.txt >> zubo.txt       
-
-      - name: 更新组播源
-        run: |
-          git pull
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          git commit -m "更新组播源"
+- name: 测试组播源
+  run: |
+    cd $GITHUB_WORKSPACE
+    bash ./zubo.sh
+    time=$(date +%Y/%m/%d)
+    # 第一步：初始化zubo.txt，写入浙江频道更新头（保持你的原有逻辑）
+    echo "浙江频道 $time 更新,#genre#" > zubo.txt
+    # 核心修复1：替换不存在的txt/浙江.txt 为 实际的浙江电信/浙江联通（二选一/都加，根据你的源）
+    # 优先拼接浙江电信（如果需要浙江联通也加，直接写cat txt/浙江联通.txt >> zubo.txt 即可）
+    [ -f "txt/浙江电信.txt" ] && cat txt/浙江电信.txt >> zubo.txt
+    # 核心修复2：批量拼接所有省份文件，逐个判断文件是否存在，不存在则跳过，不中断脚本
+    # 把所有要拼接的文件列在这里，用空格分隔
+    PROVINCE_FILES="txt/湖南电信.txt txt/湖北电信.txt txt/广东电信.txt txt/北京联通.txt txt/四川电信.txt txt/浙江电信.txt txt/江苏电信.txt txt/上海电信.txt txt/福建电信.txt txt/安徽电信.txt txt/江西电信.txt txt/天津联通.txt txt/河南联通.txt txt/河南电信.txt txt/河北电信.txt txt/河北联通.txt txt/山东电信.txt txt/北京电信.txt txt/陕西电信.txt txt/广西电信.txt txt/贵州电信.txt txt/山西联通.txt txt/重庆电信.txt txt/海南电信.txt txt/吉林电信.txt txt/云南电信.txt txt/湖北联通.txt txt/山东联通.txt txt/重庆联通.txt txt/黑龙江联通.txt txt/辽宁联通.txt txt/甘肃电信.txt txt/新疆电信.txt txt/宁夏电信.txt"
+    # 遍历文件列表，只拼接存在的文件
+    for file in $PROVINCE_FILES; do
+      if [ -f "$file" ]; then
+        cat "$file" >> zubo.txt
+        echo "成功拼接：$file"
+      else
+        echo "提示：$file 不存在，跳过拼接"
+      fi
+    done
+- name: 更新组播源
+  run: |
+    git pull
+    git config --local user.email "action@github.com"
+    git config --local user.name "GitHub Action"
+    git add .
+    git commit -m "更新组播源"
 #          git push
-
-
-      - name: Push To Github
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GH_TOKEN }}
-          repository: ${{ secrets.GH_PATH }}
-          directory: .
-          force: true
+- name: Push To Github
+  uses: ad-m/github-push-action@master
+  with:
+    github_token: ${{ secrets.GH_TOKEN }}
+    repository: ${{ secrets.GH_PATH }}
+    directory: .
+    force: true
