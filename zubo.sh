@@ -22,177 +22,145 @@ case $city_choice in
     1)
         city="浙江电信"
         stream="udp/233.50.201.100:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOmXnyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
+        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iua1meaxnyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     2)
         city="江苏电信"
         stream="udp/239.49.8.19:9614"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iuepu%2BiLjyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=10"
-        ;;
-    3)
-        city="湖北电信"
-        stream="rtp/239.69.1.40:9880"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IuebiueWMlyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
-        ;;
-    4)
-        city="河南电信"
-        stream="rtp/239.16.20.21:10210"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IuebiueWbmyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
+        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iuaxn%2BiLjyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=10"
         ;;
     5)
         city="河北联通"
         stream="rtp/239.253.92.154:6011"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOi9rSIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
+        ;;
+    3)
+        city="湖北电信"
+        stream="rtp/239.69.1.40:9880"
+        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iua5luWMlyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
+        ;;
+    4)
+        city="河南电信"
+        stream="rtp/239.16.20.21:10210"
         ;;
     6)
         city="广东电信"
         stream="udp/239.77.1.152:5146"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueJvuue7jyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     7)
         city="北京联通"
         stream="rtp/239.3.1.241:8000"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iui9veW6lwIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
 	;;
     8)
         city="湖南电信"
         stream="udp/239.76.246.151:1234"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IuebiueWTnyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
 	;;
     9)
         city="辽宁联通"
         stream="rtp/232.0.0.126:1234"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iuebiue8nSIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     10)
         city="四川电信"
         stream="udp/239.93.0.169:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOmWbmyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     11)
         city="山东电信"
         stream="udp/239.21.1.87:5002"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOmWbpyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     12)
         city="陕西电信"
         stream="rtp/239.111.205.35:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6pSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     13)
         city="广西电信"
         stream="udp/239.81.0.107:4056"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueJvuWFpSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     14)
         city="贵州电信"
         stream="rtp/238.255.2.1:5999"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6oiIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     15)
         city="山西联通"
         stream="rtp/226.0.2.152:9128"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOi9pSIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     16)
         city="上海电信"
         stream="udp/239.45.3.146:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOmWbgyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     17)
         city="福建电信"
         stream="rtp/239.61.2.132:8708"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm7jiIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     18)
         city="江西电信"
         stream="udp/239.252.220.63:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6piIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     19)
         city="安徽电信"
         stream="rtp/238.1.79.27:4328"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6pyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     20)
         city="天津联通"
         stream="udp/225.1.1.111:5002"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iui1tOW6lwIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     21)
         city="宁夏电信"
         stream="rtp/239.121.4.94:8538"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6lSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     22)
         city="重庆电信"
         stream="rtp/235.254.196.249:1268"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iui1teW6lwIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     23)
         city="河北电信"
         stream="rtp/239.254.200.174:6000"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOi9rSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     24)
         city="河南联通"
         stream="rtp/225.1.4.98:1127"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IuebiueWbmyIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     25)
         city="海南电信"
         stream="rtp/239.253.64.253:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm6pSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     26)
         city="黑龙江联通"
         stream="rtp/229.58.190.150:5000"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iuebiue8oiIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     27)
         city="甘肃电信"
         stream="udp/239.255.30.249:8231"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm7jiIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     28)
         city="新疆电信"
         stream="udp/238.125.3.174:5140"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm7piIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     29)
         city="内蒙古电信"
         stream="rtp/239.29.0.2:5000"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm8nSIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     30)
         city="北京电信"
         stream="rtp/225.1.8.21:8002"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iui9veW6lwIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     31)
         city="湖北联通"
         stream="rtp/228.0.0.60:6108"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IuebiueWMlyIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     32)
         city="吉林电信"
         stream="rtp/239.37.0.231:5540"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iuebiue8piIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     33)
         city="云南电信"
         stream="rtp/239.200.200.145:8840"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOm7pyIgJiYgb3JnPSJDaGluYW5ldCIgJiYgcHJvdG9jb2w9Imh0dHAi&page=1&page_size=20"
         ;;
     34)
         city="山东联通"
         stream="rtp/239.253.254.78:8000"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249IueahOmWbpyIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     35)
         city="重庆联通"
         stream="udp/225.0.4.187:7980"
-        url_fofa="https://fofa.info/result?qbase64=InVkcHh5IiAmJiByZWdpb249Iui1teW6lwIgJiYgb3JnPSJDaGluYWkgVW5pY29tIiAmJiBwcm90b2NvbD0iaHR0cCI=&page=1&page_size=20"
         ;;
     0)
         # 逐个处理{ }内每个选项
