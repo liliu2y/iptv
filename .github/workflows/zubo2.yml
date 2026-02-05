@@ -5,9 +5,9 @@ on:
     - cron: '30 8 * * *'
   workflow_dispatch:
 
-  # 声明 GITHUB_TOKEN 权限（必须）
+# 关键：授予 GITHUB_TOKEN 写入代码的权限（即使使用自定义 GH_TOKEN 也建议声明）
 permissions:
-  contents: write  # 授予写入代码的权限
+  contents: write
 
 jobs:
   run-script:
@@ -35,12 +35,17 @@ jobs:
 
       - name: 更新组播源
         run: |
-          git pull
+          # 拉取远程最新代码（避免冲突）
+          git pull origin main --rebase
+          # 配置 git 用户名邮箱
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # 添加所有变更文件
           git add .
-          git commit -m "更新组播源"
-#          git push
+          # 关键：仅当有变更时才提交，无变更则输出提示并退出（退出码0）
+          git commit -m "更新组播源" || echo "⚠️ 无文件变更，跳过提交"
+        # 即使 commit 失败（无变更），步骤也不终止
+        continue-on-error: true
 
       - name: Push To Github
         uses: ad-m/github-push-action@master
@@ -48,7 +53,5 @@ jobs:
           github_token: ${{ secrets.GH_TOKEN }}
           repository: ${{ secrets.GH_PATH }}
           directory: .
-          force: true
-          branch: main  # 明确指定推送分支
-          github_url: https://github.com
-          push_to_submodules: on-demand
+          branch: main  # 明确指定推送分支（必填，避免默认分支问题）
+          force: true   # 仅在需要强制推送时保留，建议非必要则移除
