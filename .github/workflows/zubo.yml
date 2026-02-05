@@ -5,6 +5,10 @@ on:
     - cron: '30 8 * * *'
   workflow_dispatch:
 
+  # 声明 GITHUB_TOKEN 权限（必须）
+permissions:
+  contents: write  # 授予写入代码的权限
+
 jobs:
   run-script:
     runs-on: ubuntu-latest
@@ -45,3 +49,6 @@ jobs:
           repository: ${{ secrets.GH_PATH }}
           directory: .
           force: true
+          branch: main  # 明确指定推送分支
+          github_url: https://github.com
+          push_to_submodules: on-demand
