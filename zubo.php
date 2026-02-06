@@ -1,22 +1,11 @@
 <?php
 /**
- * IPTV 组播源扫描测速工具 - PHP 整合版
+ * IPTV 组播源扫描测速工具 - GitHub Actions 版
  * 兼容 PHP 7.4+
- * 
- * 使用方式:
- * php zubo.php [stage] [city_number|operator]
- * 
- * stage: 
- *   scan    - 只执行扫描阶段
- *   test    - 只执行测速阶段  
- *   all     - 执行全部阶段（默认）
- * 
- * city_number: 1-35, 0（全部）, 或运营商名称（联通/电信/移动）
  */
 
 class IptvScanner
 {
-    // 城市配置（从 shell 脚本移植）
     private $cities = [
         1 => ['name' => '浙江电信', 'stream' => 'udp/233.50.201.100:5140', 'operator' => '电信'],
         2 => ['name' => '江苏电信', 'stream' => 'udp/239.49.8.19:9614', 'operator' => '电信'],
@@ -61,15 +50,16 @@ class IptvScanner
     private $stage = 'all';
     private $cityChoice = '联通';
     private $selectedCities = [];
-    private $autoRun = false;  // 是否自动运行
+    private $autoRun = false;
+    private $startTime;
 
     public function __construct($stage = 'all', $cityChoice = '联通', $autoRun = false)
     {
+        $this->startTime = microtime(true);
         $this->stage = $stage;
         $this->cityChoice = $cityChoice;
         $this->autoRun = $autoRun;
         
-        // 确保目录存在
         foreach (['ip', 'template', 'txt', 'speedlog'] as $dir) {
             if (!is_dir($dir)) {
                 mkdir($dir, 0755, true);
@@ -79,9 +69,6 @@ class IptvScanner
         $this->parseCityChoice();
     }
 
-    /**
-     * 解析城市选择
-     */
     private function parseCityChoice(): void
     {
         if (is_numeric($this->cityChoice)) {
@@ -101,7 +88,7 @@ class IptvScanner
             }
             
             if (empty($this->selectedCities)) {
-                echo "[提示] 未找到 '{$operator}'，使用默认：联通\n";
+                $this->log("未找到 '{$operator}'，使用默认：联通");
                 $this->cityChoice = '联通';
                 foreach ($this->cities as $num => $info) {
                     if ($info['operator'] === '联通') {
@@ -112,114 +99,48 @@ class IptvScanner
         }
     }
 
-    /**
-     * 显示菜单并获取选择（带5秒超时）
-     */
+    private function log($msg): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}] {$msg}\n";
+        flush();
+    }
+
     public function showMenu(): void
     {
         echo "======== IPTV 组播源扫描测速工具 ========\n";
         echo "执行阶段: {$this->stage}\n";
         
-        // 按运营商分组显示
-        $byOperator = [];
-        foreach ($this->cities as $num => $city) {
-            $byOperator[$city['operator']][] = ['num' => $num, 'name' => $city['name']];
-        }
-        
-        echo "\n【默认已选择: 联通】\n";
-        foreach ($byOperator as $op => $cities) {
-            echo "  {$op}: ";
-            $names = array_map(function($c) {
-                return in_array($c['num'], $this->selectedCities) ? "**{$c['name']}**" : $c['name'];
-            }, $cities);
-            echo implode(', ', array_slice($names, 0, 3)) . " 等" . count($cities) . "个\n";
-        }
-        
-        echo "\n可选操作:\n";
-        echo "  1. 直接回车 - 使用默认（联通）\n";
-        echo "  2. 输入编号 - 选择单个城市（1-35）\n";
-        echo "  3. 输入运营商 - 选择全部电信/联通/移动\n";
-        echo "  4. 输入 0 - 选择全部城市\n";
-        echo "========================================\n";
-        
-        // 只有在终端模式且未指定参数时才提示输入
-        if (!$this->autoRun && php_sapi_name() === 'cli' && posix_isatty(STDIN)) {
-            echo "\n5秒后自动使用默认值（联通）运行...\n";
-            echo "请输入选择 (或直接回车): ";
-            
-            // 设置非阻塞读取，5秒超时
-            $input = $this->readInputWithTimeout(5);
-            
-            if ($input !== null && trim($input) !== '') {
-                $input = trim($input);
-                if (is_numeric($input)) {
-                    $this->cityChoice = (int)$input;
-                } else {
-                    $this->cityChoice = $input;
-                }
-                $this->selectedCities = [];
-                $this->parseCityChoice();
-                echo "\n已手动选择: {$this->cityChoice}\n";
-            } else {
-                echo "\n超时，使用默认值: 联通\n";
-            }
-        } else {
-            echo "\n自动模式，使用默认值: 联通\n";
-        }
-        
         $count = count($this->selectedCities);
-        echo "\n最终选择: {$count} 个城市 ({$this->cityChoice})\n";
-        if ($count <= 5) {
+        echo "已选择: {$count} 个城市 ({$this->cityChoice})\n";
+        
+        if ($count <= 10) {
             foreach ($this->selectedCities as $num) {
                 echo "  - {$this->cities[$num]['name']}\n";
             }
         } else {
-            echo "  - " . implode(', ', array_map(function($n) {
+            echo "  - 前5个: " . implode(', ', array_map(function($n) {
                 return $this->cities[$n]['name'];
-            }, array_slice($this->selectedCities, 0, 5))) . " 等共{$count}个\n";
+            }, array_slice($this->selectedCities, 0, 5))) . "\n";
+            echo "  - ... 等共{$count}个\n";
         }
-        echo "\n";
+        echo "========================================\n\n";
     }
 
-    /**
-     * 带超时的输入读取
-     */
-    private function readInputWithTimeout(int $timeout): ?string
-    {
-        // 使用 stream_select 实现超时读取
-        $read = [STDIN];
-        $write = null;
-        $except = null;
-        
-        $result = stream_select($read, $write, $except, $timeout);
-        
-        if ($result === false || $result === 0) {
-            // 超时或错误
-            return null;
-        }
-        
-        // 有输入，读取一行
-        $input = fgets(STDIN);
-        return $input !== false ? $input : null;
-    }
-
-    /**
-     * 主执行流程
-     */
     public function run(): void
     {
         $this->showMenu();
         
         if (empty($this->selectedCities)) {
-            echo "错误: 未选择任何城市\n";
-            return;
+            $this->log("错误: 未选择任何城市");
+            exit(1);
         }
         
         foreach ($this->selectedCities as $cityNum) {
             $cityInfo = $this->cities[$cityNum];
             $cityName = $cityInfo['name'];
             
-            echo "\n======== 处理: {$cityName} ========\n";
+            $this->log("======== 开始处理: {$cityName} ========");
             
             if (in_array($this->stage, ['all', 'scan'])) {
                 $this->scanCity($cityName);
@@ -234,7 +155,8 @@ class IptvScanner
             $this->mergeAll();
         }
         
-        echo "\n全部完成!\n";
+        $elapsed = round(microtime(true) - $this->startTime, 2);
+        $this->log("全部完成! 耗时: {$elapsed}秒");
     }
 
     // ==================== 扫描阶段 ====================
@@ -244,22 +166,22 @@ class IptvScanner
         $configFile = "ip/{$cityName}_config.txt";
         
         if (!file_exists($configFile)) {
-            echo "[扫描] 配置不存在: {$configFile}, 跳过\n";
+            $this->log("[扫描] 配置不存在: {$configFile}, 跳过");
             return;
         }
         
-        echo "[扫描] 开始扫描 {$cityName}...\n";
+        $this->log("[扫描] 开始扫描 {$cityName}...");
         
         $configs = $this->readConfig($configFile);
         if (empty($configs)) {
-            echo "[扫描] 配置为空\n";
+            $this->log("[扫描] 配置为空");
             return;
         }
         
         $allIpPorts = [];
         foreach ($configs as $config) {
             list($ip, $port, $option, $urlEnd) = $config;
-            echo "[扫描] 网段: http://{$ip}:{$port}{$urlEnd}\n";
+            $this->log("[扫描] 网段: http://{$ip}:{$port}{$urlEnd}");
             $results = $this->scanIpPort($ip, $port, $option, $urlEnd);
             $allIpPorts = array_merge($allIpPorts, $results);
         }
@@ -270,9 +192,9 @@ class IptvScanner
             
             $outputFile = "ip/{$cityName}_ip.txt";
             file_put_contents($outputFile, implode("\n", $allIpPorts));
-            echo "[扫描] 发现 " . count($allIpPorts) . " 个 IP → {$outputFile}\n";
+            $this->log("[扫描] 发现 " . count($allIpPorts) . " 个 IP → {$outputFile}");
         } else {
-            echo "[扫描] 未发现可用 IP\n";
+            $this->log("[扫描] 未发现可用 IP");
         }
     }
 
@@ -343,7 +265,7 @@ class IptvScanner
         $this->checked[0] = 0;
         
         $maxWorkers = ($option % 2 == 1) ? 300 : 100;
-        echo "[扫描] 共 {$this->totalToCheck} 个地址，并发 {$maxWorkers}\n";
+        $this->log("[扫描] 共 {$this->totalToCheck} 个地址，并发 {$maxWorkers}");
         
         $batchSize = 1000;
         $batches = array_chunk($ipPorts, $batchSize);
@@ -439,21 +361,21 @@ class IptvScanner
         $ipFile = "ip/{$cityName}_ip.txt";
         
         if (!file_exists($ipFile)) {
-            echo "[测速] IP文件不存在: {$ipFile}, 跳过\n";
+            $this->log("[测速] IP文件不存在: {$ipFile}, 跳过");
             return;
         }
         
-        echo "[测速] 开始测试 {$cityName}...\n";
+        $this->log("[测速] 开始测试 {$cityName}...");
         
         $ipList = file($ipFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         $ipList = array_unique(array_filter($ipList));
         
         if (empty($ipList)) {
-            echo "[测速] IP列表为空\n";
+            $this->log("[测速] IP列表为空");
             return;
         }
         
-        echo "[测速] 共 " . count($ipList) . " 个IP，测试连通性...\n";
+        $this->log("[测速] 共 " . count($ipList) . " 个IP，测试连通性...");
         
         $goodIps = [];
         foreach ($ipList as $ip) {
@@ -463,10 +385,10 @@ class IptvScanner
         }
         
         $goodCount = count($goodIps);
-        echo "[测速] 连通成功 {$goodCount} 个，开始测速...\n";
+        $this->log("[测速] 连通成功 {$goodCount} 个，开始测速...");
         
         if ($goodCount === 0) {
-            echo "[测速] 无可用IP\n";
+            $this->log("[测速] 无可用IP");
             return;
         }
         
@@ -476,7 +398,7 @@ class IptvScanner
             $i++;
             $speed = $this->testSpeed($ip, $stream);
             $speedStr = $speed > 0 ? round($speed, 2) . ' MB/s' : '失败';
-            echo "[测速] {$i}/{$goodCount}: {$ip} => {$speedStr}\n";
+            $this->log("[测速] {$i}/{$goodCount}: {$ip} => {$speedStr}");
             
             if ($speed > 0) {
                 $speedResults[$ip] = $speed;
@@ -486,9 +408,9 @@ class IptvScanner
         arsort($speedResults);
         $top3 = array_slice(array_keys($speedResults), 0, 3);
         
-        echo "[测速] 最快3个:\n";
+        $this->log("[测速] 最快3个:");
         foreach ($top3 as $idx => $ip) {
-            echo "  " . ($idx + 1) . ". {$ip} (" . round($speedResults[$ip], 2) . " MB/s)\n";
+            $this->log("  " . ($idx + 1) . ". {$ip} (" . round($speedResults[$ip], 2) . " MB/s)");
         }
         
         $this->generatePlaylist($cityName, $top3, $stream);
@@ -539,7 +461,7 @@ class IptvScanner
         $templateFile = "template/template_{$cityName}.txt";
         
         if (!file_exists($templateFile)) {
-            echo "[生成] 模板不存在: {$templateFile}\n";
+            $this->log("[生成] 模板不存在: {$templateFile}");
             return;
         }
         
@@ -558,14 +480,14 @@ class IptvScanner
         
         $outputFile = "txt/{$cityName}.txt";
         file_put_contents($outputFile, implode("\n", $finalOutput));
-        echo "[生成] 已保存: {$outputFile}\n";
+        $this->log("[生成] 已保存: {$outputFile}");
     }
 
     // ==================== 合并阶段 ====================
 
     private function mergeAll(): void
     {
-        echo "\n[合并] 开始合并...\n";
+        $this->log("[合并] 开始合并...");
         
         $allContent = [];
         $time = date('m/d H:i');
@@ -586,7 +508,7 @@ class IptvScanner
         
         $this->generateM3u($finalContent);
         
-        echo "[合并] 已生成 zubo_all.txt / zubo_all.m3u\n";
+        $this->log("[合并] 已生成 zubo_all.txt / zubo_all.m3u");
     }
 
     private function generateM3u(string $txtContent): void
@@ -615,19 +537,14 @@ class IptvScanner
     }
 }
 
-// ==================== 命令行入口 ====================
+// ==================== 入口 ====================
 
 $stage = $argv[1] ?? 'all';
 $city = $argv[2] ?? '联通';
-
-// 检查是否有 -y 或 --auto 参数表示自动运行
-$autoRun = in_array('-y', $argv) || in_array('--auto', $argv);
+$autoRun = in_array('-y', $argv) || in_array('--auto', $argv) || getenv('CI') === 'true';
 
 if (!in_array($stage, ['scan', 'test', 'all'])) {
-    echo "用法: php zubo.php [stage] [city|operator] [-y|--auto]\n";
-    echo "  stage:  scan(扫描) | test(测速) | all(全部,默认)\n";
-    echo "  city:   0-35 | 联通(默认) | 电信 | 移动\n";
-    echo "  -y:     自动运行，不等待输入\n";
+    echo "用法: php zubo.php [stage] [city] [-y|--auto]\n";
     exit(1);
 }
 
