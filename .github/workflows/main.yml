@@ -2,9 +2,8 @@ name: IPTV Auto Update
 
 on:
   schedule:
-    # 北京时间 2:00 = UTC 18:00 (前一天)
     - cron: '0 18 * * *'
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   update-iptv:
@@ -14,8 +13,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
+        # 使用 PAT 代替 GITHUB_TOKEN
+        token: ${{ secrets.PAT_TOKEN }}
 
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
@@ -23,33 +23,13 @@ jobs:
         php-version: '8.1'
         extensions: curl
 
-    - name: Setup Python (for auxiliary scripts if needed)
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y expect
-
     - name: Prepare directories
       run: |
         mkdir -p ip template txt speedlog
 
-    - name: Download config files from remote (optional)
-      # 如果你的配置文件在另一个仓库或远程服务器，可以在这里下载
-      # 或者将配置文件直接放在当前仓库的 ip/ 目录下
+    - name: Run IPTV Scanner
+      timeout-minutes: 120
       run: |
-        # 示例：从远程下载配置文件（根据实际情况修改）
-        # curl -L -o ip/上海电信_config.txt "https://raw.githubusercontent.com/your-config-repo/main/ip/上海电信_config.txt"
-        # 或者直接使用仓库中已有的配置文件
-        ls -la ip/
-
-    - name: Run IPTV Scanner (Auto mode)
-      timeout-minutes: 120  # 设置2小时超时
-      run: |
-        # 自动运行，不等待输入，使用联通
         php zubo.php all 联通 --auto
       env:
         TZ: Asia/Shanghai
@@ -59,40 +39,22 @@ jobs:
         echo "=== Generated files ==="
         ls -lh zubo_all.* txt/ 2>/dev/null || true
         echo ""
-        echo "=== zubo_all.txt first 20 lines ==="
         head -20 zubo_all.txt 2>/dev/null || echo "File not found"
-        echo ""
-        echo "=== File sizes ==="
-        stat -c "%s %n" zubo_all.* 2>/dev/null || true
 
     - name: Commit and push results
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
         
-        # 添加生成的文件
         git add zubo_all.txt zubo_all.m3u
         git add txt/*.txt 2>/dev/null || true
         git add ip/*_ip.txt 2>/dev/null || true
         
-        # 检查是否有变更
         if git diff --cached --quiet; then
           echo "No changes to commit"
           exit 0
         fi
         
-        # 提交并推送
         git commit -m "Update IPTV lists - $(date +'%Y-%m-%d %H:%M:%S') CST"
-        git push origin main
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: iptv-results-${{ github.run_id }}
-        path: |
-          zubo_all.txt
-          zubo_all.m3u
-          txt/*.txt
-          ip/*_ip.txt
-        retention-days: 7
+        # 使用 PAT 推送
+        git push https://${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git main
