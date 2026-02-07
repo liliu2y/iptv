@@ -30,7 +30,7 @@ jobs:
     - name: Run IPTV Scanner
       timeout-minutes: 120
       run: |
-        php zubo.php all 联通 --auto
+        php zubo.php
       env:
         TZ: Asia/Shanghai
 
