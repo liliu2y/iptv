@@ -1,26 +1,14 @@
 <?php
 /**
- * IPTV 组播源扫描测速工具 - PHP 整合版
- * 兼容 PHP 7.4+
- * 
- * 使用方式:
- * php zubo.php [stage] [city_number]
- * 
- * stage: 
- *   scan    - 只执行扫描阶段
- *   test    - 只执行测速阶段  
- *   all     - 执行全部阶段（默认）
- * 
- * city_number: 1-35 或 0（全部，默认）
+ * IPTV 组播源扫描测速工具 - 高性能优化版
+ * 优化点：测速并行化、城市级多进程并行、连接复用、智能超时
  */
 
-// 1. 不设置运行时间限制
 set_time_limit(0);
 ini_set('max_execution_time', 0);
 
-class IptvScanner
+class IptvScannerOptimized
 {
-    // 城市配置（从 shell 脚本移植）
     private $cities = [
         1 => ['name' => '浙江电信', 'stream' => 'udp/233.50.201.100:5140'],
         2 => ['name' => '江苏电信', 'stream' => 'udp/239.49.8.19:9614'],
@@ -59,107 +47,39 @@ class IptvScanner
         35 => ['name' => '重庆联通', 'stream' => 'udp/225.0.4.187:7980'],
     ];
 
-    private $checked = [0];
-    private $validIpPorts = [];
-    private $totalToCheck = 0;
     private $stage = 'all';
     private $cityChoice = 0;
-    // 记录有测速IP的省份
     private $citiesWithSpeed = [];
+    private $parallelCities = false;
+    private $maxCityWorkers = 4;
+    
+    private $speedTestConcurrency = 20;
+    private $speedTestDuration = 3;
+    private $connectTimeout = 2;
 
-    public function __construct($stage = 'all', $cityChoice = 0)
+    public function __construct($stage = 'all', $cityChoice = 0, $parallel = false)
     {
         $this->stage = $stage;
         $this->cityChoice = (int)$cityChoice;
+        $this->parallelCities = $parallel && function_exists('pcntl_fork');
         
-        // 确保目录存在
         foreach (['ip', 'template', 'txt', 'speedlog'] as $dir) {
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
+            if (!is_dir($dir)) mkdir($dir, 0755, true);
         }
     }
 
-    /**
-     * 显示菜单并获取选择（带5秒倒计时）
-     */
-    public function showMenu(): void
-    {
-        echo "======== IPTV 组播源扫描测速工具 ========\n";
-        echo "执行阶段: {$this->stage}\n";
-        echo "选择城市:\n";
-        
-        foreach ($this->cities as $num => $city) {
-            echo sprintf("%2d. %s\n", $num, $city['name']);
-        }
-        echo " 0. 全部城市\n";
-        echo "========================================\n";
-        
-        // 2. 等待5秒后自动运行默认
-        if ($this->cityChoice === 0 && php_sapi_name() === 'cli' && posix_isatty(STDIN)) {
-            echo "\n请输入编号 (0-35, 默认0): ";
-            
-            // 倒计时5秒
-            $selected = false;
-            for ($i = 5; $i > 0; $i--) {
-                echo "\r请输入编号 (0-35, 默认0) [{$i}秒后自动运行默认]: ";
-                
-                // 使用 stream_select 实现非阻塞输入
-                $read = [STDIN];
-                $write = null;
-                $except = null;
-                $timeout = 1; // 1秒超时
-                
-                if (stream_select($read, $write, $except, $timeout) > 0) {
-                    $input = trim(fgets(STDIN));
-                    if ($input !== '') {
-                        $this->cityChoice = is_numeric($input) ? (int)$input : 0;
-                        $selected = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (!$selected) {
-                echo "\r请输入编号 (0-35, 默认0) [自动运行默认]      \n";
-            }
-        }
-        
-        echo "选择: " . ($this->cityChoice === 0 ? '全部' : $this->cities[$this->cityChoice]['name']) . "\n\n";
-    }
-
-    /**
-     * 主执行流程
-     */
     public function run(): void
     {
-        $this->showMenu();
+        $citiesToProcess = $this->cityChoice === 0 
+            ? array_keys($this->cities) 
+            : [$this->cityChoice];
         
-        $citiesToProcess = $this->cityChoice === 0 ? array_keys($this->cities) : [$this->cityChoice];
-        
-        foreach ($citiesToProcess as $cityNum) {
-            if (!isset($this->cities[$cityNum])) continue;
-            
-            $cityInfo = $this->cities[$cityNum];
-            $cityName = $cityInfo['name'];
-            
-            echo "\n======== 处理: {$cityName} ========\n";
-            
-            // 阶段1: 扫描（如果配置存在且需要扫描）
-            if (in_array($this->stage, ['all', 'scan'])) {
-                $this->scanCity($cityName);
-            }
-            
-            // 阶段2: 测速
-            if (in_array($this->stage, ['all', 'test'])) {
-                $hasSpeed = $this->testCity($cityName, $cityInfo['stream']);
-                if ($hasSpeed) {
-                    $this->citiesWithSpeed[] = $cityName;
-                }
-            }
+        if ($this->parallelCities && count($citiesToProcess) > 1) {
+            $this->runParallelCities($citiesToProcess);
+        } else {
+            $this->runSequentialCities($citiesToProcess);
         }
         
-        // 阶段3: 合并（仅全部执行时）
         if ($this->stage === 'all' && $this->cityChoice === 0) {
             $this->mergeAll();
         }
@@ -167,32 +87,89 @@ class IptvScanner
         echo "\n全部完成!\n";
     }
 
-    // ==================== 扫描阶段（原 PHP 功能） ====================
+    private function runParallelCities(array $citiesToProcess): void
+    {
+        echo "[并行模式] 启动 {$this->maxCityWorkers} 个进程处理 " . count($citiesToProcess) . " 个城市\n";
+        
+        $chunks = array_chunk($citiesToProcess, ceil(count($citiesToProcess) / $this->maxCityWorkers));
+        $children = [];
+        
+        foreach ($chunks as $index => $cityChunk) {
+            $pid = pcntl_fork();
+            
+            if ($pid === -1) {
+                echo "无法 fork 进程，回退到串行模式\n";
+                $this->runSequentialCities($cityChunk);
+            } elseif ($pid === 0) {
+                $cityNames = array_map(function($n) { return $this->cities[$n]['name']; }, $cityChunk);
+                echo "[子进程 " . getmypid() . "] 处理: " . implode(', ', $cityNames) . "\n";
+                foreach ($cityChunk as $cityNum) {
+                    $this->processCity($cityNum);
+                }
+                exit(0);
+            } else {
+                $children[] = $pid;
+            }
+        }
+        
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+        }
+        
+        echo "[并行模式] 所有子进程完成\n";
+        
+        foreach ($citiesToProcess as $cityNum) {
+            $cityName = $this->cities[$cityNum]['name'];
+            if (file_exists("txt/{$cityName}.txt")) {
+                $this->citiesWithSpeed[] = $cityName;
+            }
+        }
+    }
 
-    /**
-     * 扫描指定城市
-     */
+    private function runSequentialCities(array $citiesToProcess): void
+    {
+        foreach ($citiesToProcess as $cityNum) {
+            $this->processCity($cityNum);
+        }
+    }
+
+    private function processCity(int $cityNum): void
+    {
+        if (!isset($this->cities[$cityNum])) return;
+        
+        $cityInfo = $this->cities[$cityNum];
+        $cityName = $cityInfo['name'];
+        
+        echo "\n======== 处理: {$cityName} ========\n";
+        
+        if (in_array($this->stage, ['all', 'scan'])) {
+            $this->scanCity($cityName);
+        }
+        
+        if (in_array($this->stage, ['all', 'test'])) {
+            $hasSpeed = $this->testCity($cityName, $cityInfo['stream']);
+            if ($hasSpeed) {
+                $this->citiesWithSpeed[] = $cityName;
+            }
+        }
+    }
+
     private function scanCity(string $cityName): void
     {
         $configFile = "ip/{$cityName}_config.txt";
         
         if (!file_exists($configFile)) {
-            echo "[扫描] 配置文件不存在: {$configFile}, 跳过扫描阶段\n";
+            echo "[扫描] 跳过 {$cityName}（无配置）\n";
             return;
         }
         
-        echo "[扫描] 开始扫描 {$cityName}...\n";
+        echo "[扫描] {$cityName} 开始...\n";
         
         $configs = $this->readConfig($configFile);
-        if (empty($configs)) {
-            echo "[扫描] 配置为空\n";
-            return;
-        }
-        
         $allIpPorts = [];
+        
         foreach ($configs as $config) {
             list($ip, $port, $option, $urlEnd) = $config;
-            echo "[扫描] 网段: http://{$ip}:{$port}{$urlEnd}\n";
             $results = $this->scanIpPort($ip, $port, $option, $urlEnd);
             $allIpPorts = array_merge($allIpPorts, $results);
         }
@@ -200,27 +177,194 @@ class IptvScanner
         if (!empty($allIpPorts)) {
             $allIpPorts = array_unique($allIpPorts);
             sort($allIpPorts);
-            
-            $outputFile = "ip/{$cityName}_ip.txt";
-            file_put_contents($outputFile, implode("\n", $allIpPorts));
-            echo "[扫描] 发现 " . count($allIpPorts) . " 个可用 IP，保存到 {$outputFile}\n";
-        } else {
-            echo "[扫描] 未发现可用 IP\n";
+            file_put_contents("ip/{$cityName}_ip.txt", implode("\n", $allIpPorts));
+            echo "[扫描] {$cityName} 发现 " . count($allIpPorts) . " 个 IP\n";
         }
     }
 
-    /**
-     * 读取配置文件
-     */
+    private function testCity(string $cityName, string $stream): bool
+    {
+        $ipFile = "ip/{$cityName}_ip.txt";
+        if (!file_exists($ipFile)) {
+            echo "[测速] {$cityName} 跳过（无IP文件）\n";
+            return false;
+        }
+        
+        $ipList = array_unique(array_filter(file($ipFile, FILE_IGNORE_NEW_LINES)));
+        if (empty($ipList)) {
+            echo "[测速] {$cityName} 跳过（IP列表空）\n";
+            return false;
+        }
+        
+        echo "[测速] {$cityName} 共 " . count($ipList) . " 个 IP\n";
+        
+        $goodIps = $this->batchConnectTest($ipList);
+        if (empty($goodIps)) {
+            echo "[测速] {$cityName} 无连通IP\n";
+            return false;
+        }
+        
+        echo "[测速] {$cityName} 连通 " . count($goodIps) . " 个，开始并行测速...\n";
+        
+        $speedResults = $this->batchSpeedTest($goodIps, $stream);
+        
+        if (empty($speedResults)) {
+            echo "[测速] {$cityName} 无测速成功IP\n";
+            return false;
+        }
+        
+        arsort($speedResults);
+        $top3 = array_slice($speedResults, 0, 3, true);
+        
+        echo "[测速] {$cityName} 最快3个:\n";
+        $idx = 1;
+        foreach ($top3 as $ip => $speed) {
+            echo "  {$idx}. {$ip} (" . round($speed, 2) . " MB/s)\n";
+            $idx++;
+        }
+        
+        $this->generatePlaylist($cityName, array_keys($top3), $stream);
+        return true;
+    }
+
+    private function batchConnectTest(array $ipList): array
+    {
+        $goodIps = [];
+        $batches = array_chunk($ipList, $this->speedTestConcurrency);
+        
+        foreach ($batches as $batch) {
+            $mh = curl_multi_init();
+            $handles = [];
+            $ipMap = [];
+            
+            foreach ($batch as $ipPort) {
+                list($ip, $port) = explode(':', $ipPort);
+                $ch = curl_init();
+                curl_setopt_array($ch, [
+                    CURLOPT_URL => "http://{$ip}:{$port}/",
+                    CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
+                    CURLOPT_TIMEOUT => $this->connectTimeout,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_NOBODY => true,
+                ]);
+                curl_multi_add_handle($mh, $ch);
+                $chId = (int)$ch;
+                $handles[$chId] = $ch;
+                $ipMap[$chId] = $ipPort;
+            }
+            
+            $running = null;
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.1);
+            } while ($running > 0);
+            
+            while ($info = curl_multi_info_read($mh)) {
+                $ch = $info['handle'];
+                $chId = (int)$ch;
+                $ipPort = $ipMap[$chId];
+                
+                if ($info['result'] === CURLE_OK) {
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    if ($httpCode > 0) {
+                        $goodIps[] = $ipPort;
+                    }
+                }
+                
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+            }
+            
+            curl_multi_close($mh);
+        }
+        
+        return $goodIps;
+    }
+
+    private function batchSpeedTest(array $ipList, string $stream): array
+    {
+        $results = [];
+        $batches = array_chunk($ipList, $this->speedTestConcurrency);
+        $total = count($ipList);
+        $processed = 0;
+        
+        foreach ($batches as $batch) {
+            $mh = curl_multi_init();
+            $handles = [];
+            $ipMap = [];
+            $startTimes = [];
+            $downloaded = [];
+            
+            foreach ($batch as $ipPort) {
+                $url = "http://{$ipPort}/{$stream}";
+                $ch = curl_init();
+                
+                $chId = (int)$ch;
+                $downloaded[$chId] = 0;
+                $startTimes[$chId] = microtime(true);
+                $ipMap[$chId] = $ipPort;
+                
+                curl_setopt_array($ch, [
+                    CURLOPT_URL => $url,
+                    CURLOPT_CONNECTTIMEOUT => 3,
+                    CURLOPT_TIMEOUT => $this->speedTestDuration + 2,
+                    CURLOPT_RETURNTRANSFER => false,
+                    CURLOPT_WRITEFUNCTION => function($ch, $data) use (&$downloaded, $startTimes) {
+                        $chId = (int)$ch;
+                        $downloaded[$chId] += strlen($data);
+                        if ((microtime(true) - $startTimes[$chId]) >= $this->speedTestDuration) {
+                            return 0;
+                        }
+                        return strlen($data);
+                    },
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_MAXREDIRS => 2,
+                ]);
+                
+                curl_multi_add_handle($mh, $ch);
+                $handles[$chId] = $ch;
+            }
+            
+            $running = null;
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.1);
+            } while ($running > 0);
+            
+            while ($info = curl_multi_info_read($mh)) {
+                $ch = $info['handle'];
+                $chId = (int)$ch;
+                $ipPort = $ipMap[$chId];
+                
+                if ($info['result'] === CURLE_OK || $info['result'] === CURLE_WRITE_ERROR) {
+                    $duration = microtime(true) - $startTimes[$chId];
+                    $bytes = $downloaded[$chId];
+                    
+                    if ($duration > 0 && $bytes > 10000) {
+                        $speed = ($bytes / 1024 / 1024) / $duration;
+                        $results[$ipPort] = $speed;
+                    }
+                }
+                
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+                $processed++;
+            }
+            
+            curl_multi_close($mh);
+            echo "[进度] 测速 {$processed}/{$total}\r";
+        }
+        
+        echo "\n";
+        return $results;
+    }
+
     private function readConfig(string $configFile): array
     {
         $ipConfigs = [];
-        
         if (!file_exists($configFile)) return [];
         
         $lines = file($configFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($lines === false) return [];
-        
         foreach ($lines as $line) {
             if (strpos($line, ',') !== false && strpos($line, '#') !== 0) {
                 $parts = array_map('trim', explode(',', $line));
@@ -238,13 +382,9 @@ class IptvScanner
                 $ipConfigs[] = [$ip, $port, $option, $urlEnd];
             }
         }
-        
         return $ipConfigs;
     }
 
-    /**
-     * 生成IP端口列表
-     */
     private function generateIpPorts(string $ip, string $port, int $option): array
     {
         list($a, $b, $c, $d) = explode('.', $ip);
@@ -275,43 +415,43 @@ class IptvScanner
         return $result;
     }
 
-    /**
-     * 多线程扫描IP端口
-     */
     private function scanIpPort(string $ip, string $port, int $option, string $urlEnd): array
     {
-        $this->validIpPorts = [];
+        $validIpPorts = [];
         $ipPorts = $this->generateIpPorts($ip, $port, $option);
-        $this->totalToCheck = count($ipPorts);
-        $this->checked[0] = 0;
+        $total = count($ipPorts);
+        $checked = 0;
         
         $maxWorkers = ($option % 2 == 1) ? 300 : 100;
-        echo "[扫描] 共 {$this->totalToCheck} 个地址，并发 {$maxWorkers}\n";
-        
         $batchSize = 1000;
         $batches = array_chunk($ipPorts, $batchSize);
         
-        foreach ($batches as $batchIndex => $batch) {
-            $this->processBatch($batch, $urlEnd, $maxWorkers, $option);
+        foreach ($batches as $batch) {
+            $batchResults = $this->processBatch($batch, $urlEnd, $maxWorkers);
+            $validIpPorts = array_merge($validIpPorts, $batchResults);
+            $checked += count($batch);
+            echo "[扫描] 进度 {$checked}/{$total}\r";
         }
         
-        return $this->validIpPorts;
+        echo "\n";
+        return $validIpPorts;
     }
 
-    /**
-     * 处理一批IP（并行cURL）
-     */
-    private function processBatch(array $ipPorts, string $urlEnd, int $concurrency, int $option): void
+    private function processBatch(array $ipPorts, string $urlEnd, int $concurrency): array
     {
+        $valid = [];
         $mh = curl_multi_init();
         $handles = [];
+        $ipMap = [];
         $active = null;
         
         $initialCount = min($concurrency, count($ipPorts));
         for ($i = 0; $i < $initialCount; $i++) {
             $ch = $this->createHandle($ipPorts[$i], $urlEnd);
             curl_multi_add_handle($mh, $ch);
-            $handles[(int)$ch] = ['handle' => $ch, 'ip' => $ipPorts[$i]];
+            $chId = (int)$ch;
+            $handles[$chId] = $ch;
+            $ipMap[$chId] = $ipPorts[$i];
         }
         
         $nextIndex = $initialCount;
@@ -322,8 +462,8 @@ class IptvScanner
             
             while ($info = curl_multi_info_read($mh)) {
                 $ch = $info['handle'];
-                $handleId = (int)$ch;
-                $ipPort = $handles[$handleId]['ip'] ?? 'unknown';
+                $chId = (int)$ch;
+                $ipPort = $ipMap[$chId] ?? 'unknown';
                 
                 if ($info['result'] === CURLE_OK) {
                     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -332,12 +472,10 @@ class IptvScanner
                     if ($httpCode === 200 && $response !== false) {
                         if (strpos($response, 'Multi stream daemon') !== false || 
                             strpos($response, 'udpxy status') !== false) {
-                            $this->validIpPorts[] = $ipPort;
+                            $valid[] = $ipPort;
                         }
                     }
                 }
-                
-                $this->checked[0]++;
                 
                 if ($nextIndex < count($ipPorts)) {
                     curl_multi_remove_handle($mh, $ch);
@@ -345,17 +483,20 @@ class IptvScanner
                     
                     $newCh = $this->createHandle($ipPorts[$nextIndex], $urlEnd);
                     curl_multi_add_handle($mh, $newCh);
-                    $handles[(int)$newCh] = ['handle' => $newCh, 'ip' => $ipPorts[$nextIndex]];
+                    $newChId = (int)$newCh;
+                    $handles[$newChId] = $newCh;
+                    $ipMap[$newChId] = $ipPorts[$nextIndex];
                     $nextIndex++;
                 } else {
                     curl_multi_remove_handle($mh, $ch);
                     curl_close($ch);
-                    unset($handles[$handleId]);
+                    unset($handles[$chId]);
                 }
             }
         } while ($active > 0);
         
         curl_multi_close($mh);
+        return $valid;
     }
 
     private function createHandle(string $ipPort, string $urlEnd)
@@ -378,144 +519,12 @@ class IptvScanner
         return $ch;
     }
 
-    // ==================== 测速阶段（原 Shell 功能） ====================
-
-    /**
-     * 测速指定城市
-     * @return bool 是否有测速成功的IP
-     */
-    private function testCity(string $cityName, string $stream): bool
-    {
-        $ipFile = "ip/{$cityName}_ip.txt";
-        $goodIpFile = "ip/good_{$cityName}_ip.txt";
-        
-        if (!file_exists($ipFile)) {
-            echo "[测速] IP 文件不存在: {$ipFile}, 跳过\n";
-            return false;
-        }
-        
-        echo "[测速] 开始测试 {$cityName}...\n";
-        
-        // 读取并去重
-        $ipList = file($ipFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $ipList = array_unique(array_filter($ipList));
-        
-        if (empty($ipList)) {
-            echo "[测速] IP 列表为空\n";
-            return false;
-        }
-        
-        echo "[测速] 共 " . count($ipList) . " 个 IP，开始连通性测试...\n";
-        
-        // 连通性测试
-        $goodIps = [];
-        foreach ($ipList as $ip) {
-            if ($this->testConnect($ip)) {
-                $goodIps[] = $ip;
-            }
-        }
-        
-        $goodCount = count($goodIps);
-        echo "[测速] 连通成功 {$goodCount} 个，开始速度测试...\n";
-        
-        if ($goodCount === 0) {
-            echo "[测速] 无可用 IP\n";
-            return false;
-        }
-        
-        // 速度测试
-        $speedResults = [];
-        $i = 0;
-        foreach ($goodIps as $ip) {
-            $i++;
-            $speed = $this->testSpeed($ip, $stream);
-            $speedStr = $speed > 0 ? round($speed, 2) . ' MB/s' : '失败';
-            echo "[测速] {$i}/{$goodCount}: {$ip} => {$speedStr}\n";
-            
-            if ($speed > 0) {
-                $speedResults[$ip] = $speed;
-            }
-        }
-        
-        // 如果没有测速成功的IP，返回false
-        if (empty($speedResults)) {
-            echo "[测速] 无测速成功的 IP\n";
-            return false;
-        }
-        
-        // 排序取前3
-        arsort($speedResults);
-        $top3 = array_slice(array_keys($speedResults), 0, 3);
-        
-        echo "[测速] 最快 3 个 IP:\n";
-        foreach ($top3 as $idx => $ip) {
-            $speed = $speedResults[$ip];
-            echo "  " . ($idx + 1) . ". {$ip} (" . round($speed, 2) . " MB/s)\n";
-        }
-        
-        // 生成播放列表
-        $this->generatePlaylist($cityName, $top3, $stream);
-        
-        return true; // 有测速成功的IP
-    }
-
-    /**
-     * 测试 TCP 连通性（模拟 nc -v -z）
-     */
-    private function testConnect(string $ipPort): bool
-    {
-        list($ip, $port) = explode(':', $ipPort);
-        
-        $fp = @fsockopen($ip, $port, $errno, $errstr, 1);
-        if ($fp) {
-            fclose($fp);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 测试下载速度（模拟 curl 测速）
-     */
-    private function testSpeed(string $ipPort, string $stream): float
-    {
-        $url = "http://{$ipPort}/{$stream}";
-        
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT => 40,
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_WRITEFUNCTION => function($ch, $data) { return strlen($data); },
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 3,
-        ]);
-        
-        $startTime = microtime(true);
-        curl_exec($ch);
-        $totalTime = microtime(true) - $startTime;
-        
-        $info = curl_getinfo($ch);
-        curl_close($ch);
-        
-        // 计算速度 MB/s
-        if ($info['http_code'] == 200 && $totalTime > 0 && $info['size_download'] > 0) {
-            return ($info['size_download'] / 1024 / 1024) / $totalTime;
-        }
-        
-        return 0;
-    }
-
-    /**
-     * 生成播放列表
-     */
     private function generatePlaylist(string $cityName, array $topIps, string $stream): void
     {
         $templateFile = "template/template_{$cityName}.txt";
         
         if (!file_exists($templateFile)) {
-            echo "[生成] 模板文件不存在: {$templateFile}\n";
+            echo "[生成] 模板不存在: {$templateFile}\n";
             return;
         }
         
@@ -525,77 +534,50 @@ class IptvScanner
         foreach ($topIps as $idx => $ip) {
             $groupName = "{$cityName}-组播" . ($idx + 1);
             $output[] = "{$groupName},#genre#";
-            
-            // 替换模板中的 ipipip
             $channels = str_replace('ipipip', $ip, $template);
             $output[] = trim($channels);
         }
         
-        // 过滤掉包含 /// 的行（模拟 grep -vE '/{3}'）
-        $finalOutput = [];
-        foreach ($output as $line) {
-            if (strpos($line, '///') === false) {
-                $finalOutput[] = $line;
-            }
-        }
-        
-        $outputFile = "txt/{$cityName}.txt";
-        file_put_contents($outputFile, implode("\n", $finalOutput));
-        echo "[生成] 播放列表已保存: {$outputFile}\n";
+        $finalOutput = array_filter($output, function($line) {
+            return strpos($line, '///') === false;
+        });
+        file_put_contents("txt/{$cityName}.txt", implode("\n", $finalOutput));
+        echo "[生成] {$cityName} 播放列表已保存\n";
     }
 
-    // ==================== 合并阶段 ====================
-
-    /**
-     * 合并所有城市的播放列表
-     * 3. 只拼接有测速IP的省份
-     */
     private function mergeAll(): void
     {
-        echo "\n[合并] 开始合并所有城市...\n";
+        echo "\n[合并] 开始合并...\n";
         
         $allContent = [];
         $time = date('m/d H:i');
         $allContent[] = "{$time} 更新,#genre#";
         $allContent[] = "浙江卫视,http://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8";
         
-        // 3. 只拼接有测速IP的省份（从已记录的 citiesWithSpeed 中获取）
         $mergedCount = 0;
-        
         foreach ($this->citiesWithSpeed as $cityName) {
             $file = "txt/{$cityName}.txt";
             if (file_exists($file)) {
                 $content = file_get_contents($file);
-                // 检查内容是否非空且包含有效的频道信息
                 if (!empty(trim($content)) && strpos($content, '#genre#') !== false) {
                     $allContent[] = trim($content);
                     $mergedCount++;
-                    echo "[合并] 已添加: {$cityName}\n";
-                } else {
-                    echo "[合并] 跳过空内容: {$cityName}\n";
                 }
-            } else {
-                echo "[合并] 文件不存在: {$cityName}\n";
             }
         }
         
         if ($mergedCount === 0) {
-            echo "[合并] 警告: 没有可合并的省份数据\n";
+            echo "[合并] 无数据可合并\n";
             return;
         }
         
         $finalContent = implode("\n", $allContent);
         file_put_contents('zubo_all.txt', $finalContent);
-        
-        // 同时生成 M3U
         $this->generateM3u($finalContent);
         
-        echo "[合并] 已生成 zubo_all.txt 和 zubo_all.m3u (共 {$mergedCount} 个省份)\n";
+        echo "[合并] 完成: {$mergedCount} 个城市 -> zubo_all.txt/m3u\n";
     }
 
-    /**
-     * 生成 M3U 格式
-     */
     private function generateM3u(string $txtContent): void
     {
         $lines = explode("\n", $txtContent);
@@ -622,18 +604,17 @@ class IptvScanner
     }
 }
 
-// ==================== 命令行入口 ====================
-
 $stage = $argv[1] ?? 'all';
 $city = $argv[2] ?? 0;
+$parallel = ($argv[3] ?? 'parallel') !== 'single';  // 默认并行，传入 single 则串行
 
-// 验证参数
 if (!in_array($stage, ['scan', 'test', 'all'])) {
-    echo "用法: php zubo.php [stage] [city_number]\n";
-    echo "  stage: scan(扫描) | test(测速) | all(全部)\n";
-    echo "  city_number: 0-35 (0=全部)\n";
+    echo "用法: php zubo.php [stage] [city] [mode]\n";
+    echo "  stage: scan | test | all\n";
+    echo "  city: 0-35 (0=全部)\n";
+    echo "  mode: parallel(默认并行) | single(串行)\n";
     exit(1);
 }
 
-$scanner = new IptvScanner($stage, $city);
+$scanner = new IptvScannerOptimized($stage, $city, $parallel);
 $scanner->run();
