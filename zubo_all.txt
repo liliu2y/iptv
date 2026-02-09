@@ -1,4 +1,4 @@
-02/09 18:30 更新,#genre#
+02/09 18:57 更新,#genre#
 浙江卫视,http://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8
 河北联通-组播1,#genre#
 九屏直播频道,http://121.29.141.162:4022/rtp/239.253.92.203:6150
