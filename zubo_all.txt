@@ -1,4 +1,4 @@
-02/11 13:00 更新,#genre#
+02/11 16:00 更新,#genre#
 浙江卫视,http://ali-m-l.cztv.com/channels/lantian/channel001/1080p.m3u8
 ﻿广东电信组播1,#genre#
 广东卫视,http://183.236.43.98:4013/udp/239.77.1.19:5146
