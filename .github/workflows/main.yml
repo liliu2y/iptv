@@ -14,7 +14,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-
+      
+      - name: 设置时区为 中国北京时间
+        run: sudo timedatectl set-timezone Asia/Shanghai
+        
       - name: 安装 Node.js 环境
         uses: actions/setup-node@v4
         with:
